@@ -1,0 +1,307 @@
+---
+title: "Biological Statistics Final Project"
+author: "Patrick Strzalkowski"
+date: "06/04/2020"
+output:
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(ggplot2)
+library(data.table)
+library(lubridate)
+library(nlme)
+library(car)
+library(ez)
+library(afex)
+library(emmeans)
+library(gvlma)
+```
+
+#read in data
+
+```{r}
+setwd("~/Laurier/Advanced Biostatistics/Final Project")
+yarin<-read.csv("yarin.csv") #Yarmouth Pond inlet
+yarout<-read.csv("yarout.csv") #Yarmouth Pond outlet
+bbin<-read.csv("bbin.csv") #BlackBerry Pond inlet
+bbout<-read.csv("bbout.csv") #BlackBerry Pond outlet
+
+#Convert date column to date format (formerly factor)
+yarin$Date <- dmy(yarin$Date) 
+yarout$Date <- dmy(yarout$Date)
+bbin$Date <- dmy(bbin$Date) 
+bbout$Date <- dmy(bbout$Date)
+
+#Our equipment had a detection limit of 30 ug/L. If lower than 30 ug/L I have changed it to the average of possible answer, 15 ug/L.
+yarin$Phosphorus[yarin$Phosphorus < 30] <- 15 
+yarout$Phosphorus[yarout$Phosphorus < 30] <- 15
+bbin$Phosphorus[bbin$Phosphorus < 30] <- 15 
+bbout$Phosphorus[bbout$Phosphorus < 30] <- 15
+
+#combining the two datasets
+yar.combined<-rbind(yarin,yarout)
+bb.combined<-rbind(bbin,bbout)
+yarbb.in.combined<-rbind(yarin,bbin)
+yarbb.out.combined<-rbind(yarout,bbout)
+yarbb.combined<-rbind(yarbb.in.combined,yarbb.out.combined)
+```
+
+#Graphs comparing inflows and outflows of a specific contaminant in both Yarmouth and BlackBerry
+
+```{r}
+#Comparing phosphorus inflow and outflow of Yarmouth
+yarbb.in.phos <- ggplot(data=yar.combined, aes(Date, Phosphorus)) +
+  geom_line( aes(colour=Pond), alpha=0.6, size=1.2) +
+  theme_bw() +  
+  scale_colour_manual(values=c("#000000", "#80008135")) +
+  geom_hline(yintercept=35, colour="orange", size=1, linetype="dashed") +
+  geom_hline(yintercept=100, colour="red", size=1, linetype="dashed") +
+  labs(col="Location", title= "Phosphorus Concentration of the inflow and outflow from Yarmouth Pond",x="Date", y="Total Phosphorus (ug/L)") +
+  theme(legend.position = "right") +
+  theme(axis.text.x= element_text(face="bold", angle=270))+
+  scale_x_date(date_breaks="5 days")
+yarbb.in.phos
+
+#Comparing phosphorus inflow and outflow of BlackBerry
+yarbb.in.phos <- ggplot(data=bb.combined, aes(Date, Phosphorus)) +
+  geom_line( aes(colour=Pond), alpha=0.6, size=1.2) +
+  theme_bw() +  
+  scale_colour_manual(values=c("#000000", "#80008135")) +
+  geom_hline(yintercept=35, colour="orange", size=1, linetype="dashed") +
+  geom_hline(yintercept=100, colour="red", size=1, linetype="dashed") +
+  labs(col="Location", title= "Phosphorus Concentration of the inflow and out flow BlackBerry Pond",x="Date", y="Total Phosphorus (ug/L)") +
+  theme(legend.position = "right") +
+  theme(axis.text.x= element_text(face="bold", angle=270))+
+  scale_x_date(date_breaks="5 days")
+yarbb.in.phos
+
+#Comparing phosphorus inflow of Yarmouth and BlackBerry
+yarbb.in.phos <- ggplot(data=yarbb.in.combined, aes(Date, Phosphorus)) +
+  geom_line( aes(colour=Pond), alpha=0.6, size=1.2) +
+  theme_bw() +  
+  scale_colour_manual(values=c("#000000", "#80008135")) +
+  geom_hline(yintercept=35, colour="orange", size=1, linetype="dashed") +
+  geom_hline(yintercept=100, colour="red", size=1, linetype="dashed") +
+  labs(col="Location", title= "Phosphorus Concentration of the inflow from Yarmouth and BlackBerry",x="Date", y="Total Phosphorus (ug/L)") +
+  theme(legend.position = "right") +
+  theme(axis.text.x= element_text(face="bold", angle=270))+
+  scale_x_date(date_breaks="5 days")
+yarbb.in.phos
+
+#Comparing phosphorus outflow for Yarmouth and BlackBerry
+yarbb.out.phos <- ggplot(data=yarbb.out.combined, aes(Date, Phosphorus)) +
+  geom_line( aes(colour=Pond), alpha=0.6, size=1.2) +
+  theme_bw() +  
+  scale_colour_manual(values=c("#000000", "#80008135")) +
+  geom_hline(yintercept=35, colour="orange", size=1, linetype="dashed") +
+  geom_hline(yintercept=100, colour="red", size=1, linetype="dashed") +
+  labs(col="Location", title= "Phosphorus Concentration of the outflow from Yarmouth and BlackBerry",x="Date", y="Total Phosphorus (ug/L)") +
+  theme(legend.position = "right") +
+  theme(axis.text.x= element_text(face="bold", angle=270))+
+  scale_x_date(date_breaks="5 days")
+yarbb.out.phos
+
+#Yellow lines (35 ug?l) indicate threshold for eutrophication, and red lines (100 ug/L) indicate threshold for hyper-eutrophication
+```
+
+#Repeated Measures ANOVA
+
+```{r}
+yarin<-read.csv("yarin.csv") #Yarmouth Pond inlet
+yarin$Location<-rep("Inlet",nrow(yarin))
+yarin$Pond<-rep("Yarmouth",nrow(yarin))
+yarout<-read.csv("yarout.csv") #Yarmouth Pond outlet
+yarout$Location<-rep("Outlet",nrow(yarout))
+yarout$Pond<-rep("Yarmouth",nrow(yarout))
+bbin<-read.csv("bbin.csv") #BlackBerry Pond inlet
+bbin$Location<-rep("Inlet",nrow(bbin))
+bbin$Pond<-rep("Blackberry",nrow(bbin))
+bbout<-read.csv("bbout.csv") #BlackBerry Pond outlet
+bbout$Location<-rep("Outlet",nrow(bbout))
+bbout$Pond<-rep("Blackberry",nrow(bbout))
+
+#Our equipment had a detection limit of 30 ug/L. If lower than 30 ug/L I have changed it to the average of possible answer, 15 ug/L.
+yarin$Phosphorus[yarin$Phosphorus < 30] <- 15 
+yarout$Phosphorus[yarout$Phosphorus < 30] <- 15
+bbin$Phosphorus[bbin$Phosphorus < 30] <- 15 
+bbout$Phosphorus[bbout$Phosphorus < 30] <- 15
+
+all.data<-rbind(yarin,bbin,yarout,bbout)
+all.data$Location<-as.factor(all.data$Location)
+all.data$ID<-paste(as.character(all.data$Pond),as.character(all.data$Location))
+all.data$DOY<-as.factor(all.data$DOY)
+all.data$Pond<-as.factor(all.data$Pond)
+
+#Combining all data together, excluding unnecessary variables and excluding Chloride due to the high amount of NA values
+all.data2<-all.data[, -c(14:23)]
+all.data2$Chloride<-NULL
+all.data2<-na.exclude(all.data2)
+
+library(afex)
+
+#anova comparing inflow/outflow and DOY
+my.anova.p2=aov_ez(
+  id="ID",
+  dv="Phosphorus",
+  data=all.data2,within="DOY",between=c("Location"),
+  type="3"
+)
+my.anova.p2
+
+#anova comparing pond and DOY
+my.anova.p3=aov_ez(
+  id="ID",
+  dv="Phosphorus",
+  data=all.data2,within="DOY",between=c("Pond"),
+  type="3"
+)
+my.anova.p3
+```
+
+#Assumptions: 
+
+#1) Independance of samples: based on proper methods and sampling procedure
+
+#2) Homogeniety of variance: Using Levene's Test, this assumption is validated for location and pond, but not for day of the year.
+
+#3) Normality of residuals: Based on visual aid and Shaprio-Wilk's test, the residuals are not normally distributed
+
+#4) Sphericity: I am unable to determine if the assumption of sphericity was validated. However, sphericity was corrected using the Greenhouse-Geisser (GG) correction, which is automatically incorporated into the aov_ez function.
+
+#Homogeneity of Variance
+```{r}
+#Testing for homogeity of residuals using Leven's test
+library(car)
+
+leveneTest(y=all.data2$Phosphorus,group=all.data2$Location) # by Location
+
+leveneTest(y=all.data2$Phosphorus,group=all.data2$DOY) # by DOY
+
+leveneTest(y=all.data2$Phosphorus,group=all.data2$Pond) # by Pond
+```
+
+#Normality Test
+```{r}
+#Testing normality of the residuals
+hist(residuals(my.anova.p2$lm))
+qqnorm(residuals(my.anova.p2$lm))
+shapiro.test(residuals(my.anova.p2$lm))
+```
+
+#Sphericity
+```{r}
+#Testing Sphericity
+
+summary(my.anova.p2)
+summary(my.anova.p3)
+
+#Test and corrections no available, and I am unsure as to why
+```
+
+#Correlation Plot
+```{r}
+#Calculate the correlation matrix
+pond.numeric.variables <- data.frame(yarbb.combined$Phosphorus, yarbb.combined$TSS, yarbb.combined$Chloride, yarbb.combined$SAL, yarbb.combined$pH, yarbb.combined$Total.Precip.mm,  yarbb.combined$Turbidity)
+
+pond.numeric.variables<-na.exclude(pond.numeric.variables) #excludes many observatons due to many missing chloride observations
+
+M<-cor(pond.numeric.variables,  method = c("pearson"))
+
+#Function to create significance matrix for corrplot
+cor.mtest <- function(mat, ...) {
+    mat <- as.matrix(mat)
+    n <- ncol(mat)
+    p.mat<- matrix(NA, n, n)
+    diag(p.mat) <- 0
+    for (i in 1:(n - 1)) {
+        for (j in (i + 1):n) {
+            tmp <- cor.test(mat[, i], mat[, j], ...)
+            p.mat[i, j] <- p.mat[j, i] <- tmp$p.value
+        }
+    }
+  colnames(p.mat) <- rownames(p.mat) <- colnames(mat)
+  p.mat
+}
+
+# Use the function to create a matrix of the p-value of the correlation
+p.mat <- cor.mtest(pond.numeric.variables)
+head(p.mat[, 1:5])
+
+#make the corrplot
+library(corrplot)
+
+corrplot(M, p.mat = p.mat, sig.level = 0.05,method= "circle", type="upper",order="hclust",insig="blank",tl.col="black")
+```
+
+#need to test assumption of normality and examine linearity
+```{r}
+#shapiro test for all variables
+apply(pond.numeric.variables,MARGIN=2,FUN=shapiro.test)
+
+#make plots to compare one variable to all others. Do they look like linear relationships? Need to change yarbb.combined.Phosphorus to the next variable and go through each variable in that data frame. 
+library(tidyr)
+pond.numeric.variables %>%
+  gather(-yarbb.combined.Phosphorus, key = "var", value = "value") %>%
+  ggplot(aes(x = value, y = yarbb.combined.Phosphorus)) +
+    geom_point() +
+    facet_wrap(~ var, scales = "free") +
+    theme_bw()
+
+pond.numeric.variables %>%
+  gather(-yarbb.combined.SAL, key = "var", value = "value") %>%
+  ggplot(aes(x = value, y = yarbb.combined.SAL)) +
+    geom_point() +
+    facet_wrap(~ var, scales = "free") +
+    theme_bw()
+
+pond.numeric.variables %>%
+  gather(-yarbb.combined.TSS, key = "var", value = "value") %>%
+  ggplot(aes(x = value, y = yarbb.combined.TSS)) +
+    geom_point() +
+    facet_wrap(~ var, scales = "free") +
+    theme_bw()
+
+pond.numeric.variables %>%
+  gather(-yarbb.combined.Chloride, key = "var", value = "value") %>%
+  ggplot(aes(x = value, y = yarbb.combined.Chloride)) +
+    geom_point() +
+    facet_wrap(~ var, scales = "free") +
+    theme_bw()
+
+pond.numeric.variables %>%
+  gather(-yarbb.combined.Turbidity, key = "var", value = "value") %>%
+  ggplot(aes(x = value, y = yarbb.combined.Turbidity)) +
+    geom_point() +
+    facet_wrap(~ var, scales = "free") +
+    theme_bw()
+
+pond.numeric.variables %>%
+  gather(-yarbb.combined.Total.Precip.mm, key = "var", value = "value") %>%
+  ggplot(aes(x = value, y = yarbb.combined.Total.Precip.mm)) +
+    geom_point() +
+    facet_wrap(~ var, scales = "free") +
+    theme_bw()
+```
+
+#Quantifying Pearson's coefficient
+```{r}
+
+#Pearson's Correlations performed individually to determine pearson's coefficient
+plot(yarbb.combined$Phosphorus~yarbb.combined$pH)
+pond.fit1<-glm(yarbb.combined$Phosphorus~yarbb.combined$pH)
+pond.fit1
+summary.lm(pond.fit1)
+gvlma(lm(pond.fit1))
+# r2 = 0.9693 SAL~Chloride
+# r2 = 0.5358 Turbidity~TSS
+# r2 = 0.203 Phosphorus~Precipitation
+# r2 = 0.01709 Phosphorus~pH
+
+#Square root of these values gives Pearson's coefficient
+```
